@@ -75,7 +75,7 @@ def save_simulated_data(n_iter, p, n, sparsity, SNR, beta_scale, rng):
     # P: Number of features 
     # sparsity: decimal number [0.00, 1.00]
     # i: Iteration number
-    # 'n_{N}_p_{P}_sparsity_{100*sparsity}_iter_{i}'
+    # key='n_{N}_p_{P}_sparsity_{100*sparsity}_iter_{i}'
     
     for n_i in range(len(n)):
         for spar_i in range(len(sparsity)):
