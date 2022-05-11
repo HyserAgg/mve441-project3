@@ -1,18 +1,45 @@
+# Main imports
 import numpy as np
 import pandas as pd
 
+
+# "From" imports
+from sklearn.model_selection import ParameterGrid, train_test_split
+from sklearn.linear_model import LassoCV
+from sklearn.metrics import mean_squared_error as mse
+
+
+##-----------------------------------------------
 def main():
     n_iter = 5 #number of iterations
-    p = 1000 #features
-    n = [200, 500, 750] #samples
-    sparsity = [0.75, 0.9, 0.95, 0.99]
-    SNR = 2
-    beta_scale = 5
-    rng = np.random.default_rng()
-    #save_simulated_data(n_iter, p, n, sparsity=sparsity, SNR=SNR, beta_scale=beta_scale, rng=rng)
-    
-    #df_key = f'n_{200}_p_{p}_sparsity_{75}_iter_{1}'
-    #read = pd.read_hdf("data/data.h5", key=df_key)
+    n_folds = 10
+    params = {'p': [1000],                     # Features
+              'n': [200, 500, 750],            # Samples
+       'sparsity': [0.75, 0.9, 0.95, 0.99],  
+            'SNR': [2],                        # Signal-to-noise
+     'beta_scale': [5],                        # std of beta coeff
+            'rng': [np.random.default_rng()]}
+
+    param_grid = ParameterGrid(params)
+    # We choose a parameter permutation
+    for point in param_grid:
+        # We repeat our runs a number of times
+        for iter in range(n_iter):
+            X,y,beta = simulate_data(**point)
+            test_size = int(np.ceil(0.8*point['n']))
+            X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=test_size)
+            lasso = LassoCV(cv = n_folds, n_jobs = -1, selection = 'random')
+            lasso.fit(X_train,y_train)
+
+            cv_mean = np.mean(lasso.mse_path_, axis=1)
+            cv_std = np.std(lasso.mse_path_, axis=1)
+            idx_min_mean = np.argmin(cv_mean)
+            idx_alpha = np.where(
+            (cv_mean <= cv_mean[idx_min_mean] + cv_std[idx_min_mean] / np.sqrt(n_folds)) &
+            (cv_mean >= cv_mean[idx_min_mean])
+                                )[0][0]
+            alpha_1se = lasso.alphas_[idx_alpha]
+            
 
 def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
 
@@ -33,14 +60,6 @@ def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
     beta_scale : float
         Scaling for the coefficient to make sure they are large
 
-    Returns
-    -------
-    X : `n x p` numpy.array
-        Matrix of features
-    y : `n` numpy.array
-        Vector of responses
-    beta : `p` numpy.array
-        Vector of regression coefficients
     """
     X = rng.standard_normal(size=(n, p))
     
@@ -52,8 +71,6 @@ def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
 
     y = X @ beta + sigma * rng.standard_normal(size=(n,))
 
-    # Shuffle columns so that non-zero features appear
-    # not simply in the first (1 - sparsity) * p columns
     idx_col = rng.permutation(p)
     
     return X[:, idx_col], y, beta[idx_col]
