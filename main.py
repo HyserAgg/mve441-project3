@@ -1,27 +1,36 @@
 # Main imports
 import numpy as np
 import pandas as pd
-
+import matplotlib.pyplot as plt
+from sklearn import linear_model
 
 # "From" imports
 from sklearn.model_selection import ParameterGrid, train_test_split
 from sklearn.linear_model import LassoCV
 from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import confusion_matrix as cm
 
 
 ##-----------------------------------------------
 def main():
-    n_iter = 5 #number of iterations
+    n_iter = 10 #number of iterations
     n_folds = 10
     params = {'p': [1000],                     # Features
-              'n': [200, 500, 750],            # Samples
-       'sparsity': [0.75, 0.9, 0.95, 0.99],  
+              'n': [200],            # Samples
+       'sparsity': [0.75, 0.9, 0.95, 0.99],
             'SNR': [2],                        # Signal-to-noise
      'beta_scale': [5],                        # std of beta coeff
             'rng': [np.random.default_rng()]}
 
     param_grid = ParameterGrid(params)
     # We choose a parameter permutation
+    mse_1se = []
+    mse_min = []
+    sensitivity_1se = []
+    specificity_1se = []
+    sensitivity_min = []
+    specificity_min = []
+    
     for point in param_grid:
         # We repeat our runs a number of times
         for iter in range(n_iter):
@@ -29,7 +38,7 @@ def main():
             test_size = int(np.ceil(0.8*point['n']))
             X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=test_size)
             lasso = LassoCV(cv = n_folds, n_jobs = -1, selection = 'random')
-            lasso.fit(X_train,y_train)
+            lasso.fit(X_train, y_train)
 
             cv_mean = np.mean(lasso.mse_path_, axis=1)
             cv_std = np.std(lasso.mse_path_, axis=1)
@@ -40,6 +49,51 @@ def main():
                                 )[0][0]
             alpha_1se = lasso.alphas_[idx_alpha]
             
+            #Compare the two lasso models
+            lasso_1se = linear_model.Lasso(alpha=alpha_1se)
+            lasso_min = linear_model.Lasso(alpha=lasso.alpha_)
+            lasso_1se.fit(X_train, y_train)
+            lasso_min.fit(X_train, y_train)
+            
+            mse_1se.append((mse(y_train, lasso_1se.predict(X_train)), mse(y_test, lasso_1se.predict(X_test))))
+            mse_min.append((mse(y_train, lasso_min.predict(X_train)), mse(y_test, lasso_min.predict(X_test))))
+    
+            #Compute specificity and sensitivity
+            TN, FP, FN, TP = cm(1*(beta != 0), 1*(lasso_1se.coef_ != 0)).ravel()
+            sensitivity_1se.append(sensitivity(TP, FN))
+            specificity_1se.append(specificity(TN, FP))
+            
+            TN, FP, FN, TP = cm(1*(beta != 0), 1*(lasso_min.coef_ != 0)).ravel()
+            sensitivity_min.append(sensitivity(TP, FN))
+            specificity_min.append(specificity(TN, FP))
+    
+    train_1se = (np.mean([idx[0] for idx in mse_1se]), np.std([idx[0] for idx in mse_1se]))
+    test_1se = (np.mean([idx[1] for idx in mse_1se]), np.std([idx[1] for idx in mse_1se]))
+    train_min = (np.mean([idx[0] for idx in mse_min]), np.std([idx[0] for idx in mse_min]))
+    test_min = (np.mean([idx[1] for idx in mse_min]), np.std([idx[1] for idx in mse_min]))
+    
+    print(f'Mean and standard deviation of MSE\n 1se: Train: {train_1se}, Test: {test_1se}\n min: Train: {train_min}, Test: {test_min}')
+
+    #Specificity vs. sensitivity scatter plot
+    plt.scatter(1-np.array(specificity_min), sensitivity_min, c='blue')
+    plt.scatter(1-np.array(specificity_1se), sensitivity_1se, c='red')
+    plt.xlabel('1 - Specificity')
+    plt.ylabel('Sensitivity')
+    plt.legend(['lambda_min', 'lambda_1se'])
+    plt.savefig("data/spec_sens_scatter")
+    plt.close()
+    
+    #Different sparsity on specificity vs. sensitivity plot for 1se
+    n_tot = len(params['sparsity'])*n_iter
+    
+    plt.scatter(1-np.array(specificity_1se), sensitivity_1se, )
+    
+
+def specificity(TN, FP):
+    return TN/(TN+FP)
+
+def sensitivity(TP, FN):
+    return TP/(TP+FN)
 
 def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
 
