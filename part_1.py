@@ -139,6 +139,7 @@ def MSE_lambda(n, p, rng, lbda, n_iter, sparsity, SNR, beta_scale, n_folds):
         test_min = (np.mean([idx[1] for idx in mse_min]), np.std([idx[1] for idx in mse_min]))
         return train_min, test_min, beta != 0, 1*(lasso_min.coef_ != 0)
 
+
 def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
 
     """Simulate data for Project 3, Part 1.
