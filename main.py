@@ -27,60 +27,62 @@ class metrics():
        
 ##-----------------------------------------------
 def main():
-    fontsize = 10
-    n_iter = 500 #number of iterations
+    n_iter = 50 #number of iterations
     n_folds = 5
     params = {'p': [500],                      # Features
-              'n': [500],           # Samples
-       'sparsity': [0.85],  
+              'n': [250, 500, 1000],                     # Samples
+       'sparsity': [0.75, 0.85, 0.95],  
             'SNR': [2],                        # Signal-to-noise
      'beta_scale': [5],                        # std of beta coeff
             'rng': [np.random.default_rng()]}
-    #alpha_min = 1.7219
-    #alpha_1lse = 1.2148
+
     param_grid = ParameterGrid(params)
-    alphas = []
     # We choose a parameter permutation
     for point in param_grid:
+        # We repeat our runs a number of times
+        metrics_lse = metrics(point)
+        metrics_min = metrics(point)
         X,y,beta = simulate_data(**point)
-        subsample_size = int(np.ceil(0.8*point['n']))
-        coeff_counts_lse = np.zeros(point['p'])
-        coeff_counts_min = np.zeros(point['p'])
-        lasso = Lasso
 
-        
         for iter in range(n_iter):
-            subsample_indices = np.random.choice(point['n'], subsample_size, replace = False)
-            X_, y_ = X[subsample_indices,:], y[subsample_indices]    
-            lasso
+            test_size = int(np.ceil(0.8*point['n']))
+            X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=True, test_size=test_size)
+            lasso = LassoCV(cv = n_folds)
+            lasso.fit(X_train,y_train)
 
+            # Identify alpha_lse
+            e = np.mean(lasso.mse_path_, axis=1)
+            s = np.std(lasso.mse_path_, axis=1)
+            idx_min_mean = np.argmin(e)
+            idx_alpha = np.where(
+            (e <= e[idx_min_mean] + s[idx_min_mean] / np.sqrt(n_folds)) &
+            (e >= e[idx_min_mean])
+                                )[0][0]
+            alpha_lse = lasso.alphas_[idx_alpha]
 
-            coeff_counts_lse[lasso_lse.coef_ != 0] += 1
-            coeff_counts_min[lasso_min.coef_ != 0] += 1
-        
-        point.pop('rng', None)
+            # Given the hyperparameter alpha and alpha_lse calculate mean square test- and training error
+            # Test the overlap of chosen coeffs with actual coeffs - i.e sensitivity and specificity of coeff. choices
+            lasso_min = Lasso(alpha = lasso.alpha_)
+            lasso_lse = Lasso(alpha = alpha_lse)
+            lasso_min.fit(X_train, y_train)
+            lasso_lse.fit(X_train, y_train)
+
+            metrics_lse.add(y_test, y_train, lasso_lse.predict(X_test), lasso_lse.predict(X_train), beta, lasso_lse.coef_)
+            metrics_min.add(y_test, y_train, lasso_min.predict(X_test), lasso_min.predict(X_train), beta, lasso_min.coef_)
+            
+        # Given this point we scatterplot the sensitivity and specificity
+        point.pop('rng',None)
         plt.figure()
-        plt.subplot(131)
-        plt.hist(coeff_counts_lse, bins = point['p'])  
-        plt.ylabel("Occurences", fontsize = fontsize)
-        plt.xlabel("Counts", fontsize = fontsize) 
-        plt.legend([f"Lambda_lse ={lasso.alpha_}"], fontsize = fontsize)
-        plt.xticks(fontsize = fontsize)
-        plt.yticks(fontsize = fontsize)
-        plt.title(point,fontsize = fontsize)
-
-        plt.subplot(132)
-        plt.hist(coeff_counts_lse, bins = point['p'])  
-        plt.ylabel("Occurences", fontsize = fontsize)
-        plt.xlabel("Count", fontsize = fontsize) 
-        plt.legend([f"Lambda_lse = {alpha_lse}"], fontsize = fontsize)
-        plt.xticks(fontsize = fontsize)
-        plt.yticks(fontsize = fontsize)
-        plt.title(point,fontsize = fontsize)
-
-        plt.show()
-
-        
+        plt.scatter(metrics_lse.spec, metrics_lse.sens, color = 'r')   
+        plt.scatter(metrics_min.spec, metrics_min.sens, color = 'y')
+        plt.title(point) 
+        plt.legend(["1se model","Min model"])
+        plt.ylabel("Sensitivity") 
+        plt.xlabel("Specificity")
+        # Test specificity and sensitivity against n and sparsity
+    plt.show()       
+            
+            
 def specifity(true_bool, pred_bool):
     cfm = cm(true_bool, pred_bool, labels = [False, True])
 
@@ -92,59 +94,7 @@ def sensitivity(true_bool, pred_bool):
     cfm = cm(true_bool, pred_bool, labels = [False, True])
     tn, fp, fn, tp = cfm.ravel()
     sens = tp/(tp+fn)
-    return sens  
-def Lasso_grid_treshold_repeat(param_grid, alphas, n_iter, thresholds, B):
-    """Simulate data from parameter grid and run lasso over it
-
-    Parameters
-    ----------
-    param_grid : A ParameterGrid object containing all combinations of n, p, sparsity etc. 
-    threshold  : The histogram threshold
-    B          : The number of times we simulate again
-
-    """
-    def specifity(true_bool, pred_bool):
-    cfm = cm(true_bool, pred_bool, labels = [False, True])
-
-    tn, fp, fn, tp = cfm.ravel()
-    spec = tn/(tn+fp)
-    return spec
-
-    def sensitivity(true_bool, pred_bool):
-        cfm = cm(true_bool, pred_bool, labels = [False, True])
-        tn, fp, fn, tp = cfm.ravel()
-        sens = tp/(tp+fn)
-    return sens  
-
-    fontsize = 15
-    for point in param_grid:
-        for threshold in thresholds:
-            sensitivity = 0
-            specificity = 0
-            X,y,beta = simulate_data(**point)
-            beta_bool = (beta != 0)
-            subsample_size = int(np.ceil(0.8*point['n']))
-            for alpha in alphas:
-                for i in range(B)
-                    coeff_counts = np.zeros(point['p'])
-                    for iter in range(n_iter):
-                        subsample_indices = np.random.choice(point['n'], subsample_size, replace = False)
-                        X_, y_ = X[subsample_indices,:], y[subsample_indices]    
-                        lasso = Lasso(alpha = alpha)
-                        lasso.fit(X_, y_)
-                        coeff_counts[lasso.coef_ != 0] += 1
-
-                coeff_bool = coeff_counts/n_iter >= threshold
-                cfm = confusion_matrix(beta_bool, coeff_bool)
-                tn, fp, fn, tp = cfm.ravel()
-
-                sensitivity += tp/(tp+fn)
-                specificity += tn/(tn+fp)
-                sensitivity = sensitivity/B
-                specificity = specificity/B
-                print(f"Thrsh: {threshold}, lambda: {alpha} | Sensitivity: {sensitivity}, Specificity: {specificity}")
-        
-    return             
+    return sens           
 
 def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
 
@@ -179,6 +129,37 @@ def simulate_data(n, p, rng, *, sparsity=0.95, SNR=2.0, beta_scale=5.0):
     idx_col = rng.permutation(p)
     
     return X[:, idx_col], y, beta[idx_col]
+
+def save_simulated_data(n_iter, p, n, sparsity, SNR, beta_scale, rng):
+    # Save simulated dataframes in h5 file.
+    # A dataframe has the following structure:
+    # > P features (p)
+    # > N samples (n)
+    # > N responses (y)
+    # > P beta coefficients (b)
+    # |(n_1, p_1), ..  (n_1, p_P), (n_1, y_1)|
+    # |     :               :           :    |            
+    # |(n_N, p_1)  ..  (n_N, p_P), (p_P, y_N)|
+    # |(n_1, b_1)  ..  (n_N, b_P),    NaN    |
+    # 
+    # Select dataframe of interest through key:
+    # N: Number of samples
+    # P: Number of features 
+    # sparsity: decimal number [0.00, 1.00]
+    # i: Iteration number
+    # key='n_{N}_p_{P}_sparsity_{100*sparsity}_iter_{i}'
+    
+    for n_i in range(len(n)):
+        for spar_i in range(len(sparsity)):
+            for iter_i in range(n_iter):
+                X, y, beta = simulate_data(n[n_i], p, rng, sparsity=sparsity[spar_i], SNR=SNR, beta_scale=beta_scale)
+                df_beta = pd.DataFrame(beta, columns=['beta'])
+                df_beta = df_beta.transpose()
+                df = pd.DataFrame(X)
+                df['response'] = y
+                df = pd.concat([df, df_beta]) 
+                df.to_hdf('data/data.h5', f'n_{n[n_i]}_p_{p}_sparsity_{int(100*sparsity[spar_i])}_iter_{iter_i}', mode='a')
+                print(f'Iteration: {(len(n)+1)*(len(sparsity)+1)*n_i+(len(sparsity)+1)*(spar_i)+iter_i}')
 
 if __name__ == "__main__":
     main()
